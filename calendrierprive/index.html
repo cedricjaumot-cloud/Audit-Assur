@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendrier CJA · LLA</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f7f4; color: #1a1a1a; min-height: 100vh; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  .sync-bar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #888; margin-bottom: 1rem; padding: 6px 12px; background: #fff; border: 0.5px solid #e0ddd5; border-radius: 8px; width: fit-content; }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; transition: background 0.3s; }
+  .sync-dot.ok      { background: #22c55e; }
+  .sync-dot.err     { background: #ef4444; }
+  .sync-dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 12px; }
+  .title { font-size: 22px; font-weight: 500; color: #1a1a1a; display: flex; align-items: center; gap: 10px; }
+  .title svg { width: 22px; height: 22px; stroke: #1a1a1a; fill: none; stroke-width: 1.8; }
+
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12px; color: #666; }
+  .leg-item { display: flex; align-items: center; gap: 5px; }
+  .leg-tag { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
+  .leg-cja-bel { background: #dbeafe; color: #1e3a8a; }
+  .leg-cja-ten { background: #fef3c7; color: #78350f; }
+  .leg-border { display: inline-block; width: 16px; height: 16px; border-radius: 3px; border: 2px solid #2563eb; vertical-align: middle; }
+  .leg-dot-wrap { display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: #eee; border: 0.5px solid #ccc; position: relative; vertical-align: middle; }
+  .leg-dot { position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: #7c3aed; display: block; }
+  .leg-pct { font-size: 10px; color: #999; margin-left: 2px; }
+
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .year-nav { display: flex; align-items: center; gap: 8px; }
+  .year-btn { font-size: 16px; padding: 4px 14px; border-radius: 8px; border: 0.5px solid #ccc; cursor: pointer; background: #fff; color: #1a1a1a; }
+  .year-btn:hover { background: #f0f0f0; }
+  .year-label { font-size: 16px; font-weight: 500; color: #1a1a1a; min-width: 44px; text-align: center; }
+  .export-btn { font-size: 12px; padding: 5px 12px; border-radius: 8px; border: 0.5px solid #ccc; cursor: pointer; background: #fff; color: #666; margin-left: auto; display: flex; align-items: center; gap: 5px; }
+  .export-btn:hover { background: #f0f0f0; }
+
+  .year-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .year-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 640px) { .year-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .month-card { background: #fff; border: 0.5px solid #e0ddd5; border-radius: 12px; padding: 12px; }
+  .month-name { font-size: 12px; font-weight: 500; color: #1a1a1a; margin-bottom: 8px; text-align: center; }
+  .day-headers { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+  .dh { font-size: 8px; color: #aaa; text-align: center; }
+  .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+
+  .day-cell { height: 24px; border-radius: 3px; font-size: 9px; font-weight: 400; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; border: 1.5px solid transparent; transition: opacity 0.1s; user-select: none; color: #1a1a1a; }
+  .day-cell:hover { opacity: 0.7; }
+  .day-cell.empty, .day-cell.disabled { cursor: default; pointer-events: none; }
+  .day-cell.disabled { color: #ccc; }
+  .day-cell.has-note::after { content: ''; position: absolute; top: 2px; right: 2px; width: 4px; height: 4px; border-radius: 50%; background: #7c3aed; }
+  .day-cell.ticket { border-color: #2563eb !important; border-width: 2px; }
+  .day-cell.today { outline: 2px solid #1a1a1a; outline-offset: 1px; }
+  .cja-bel { background: #dbeafe; }
+  .cja-ten { background: #fef3c7; }
+  .lla-bel { color: #b91c1c !important; font-weight: 700 !important; }
+  .lla-ten { color: #9ca3af !important; font-weight: 400 !important; }
+
+  .popup-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 999; }
+  .popup { background: #fff; border: 0.5px solid #ddd; border-radius: 12px; padding: 1.5rem; width: 320px; max-width: 94vw; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+  .popup-title { font-size: 15px; font-weight: 500; color: #1a1a1a; margin-bottom: 1rem; }
+  .popup-label { font-size: 10px; color: #888; margin-bottom: 6px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+  .loc-btns { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .loc-btn { font-size: 11px; padding: 5px 11px; border-radius: 8px; border: 0.5px solid #ddd; cursor: pointer; background: #f5f5f5; color: #1a1a1a; font-weight: 400; }
+  .loc-btn:hover { background: #eee; }
+  .loc-btn.a-bel { background: #dbeafe; border-color: #3b82f6; color: #1e3a8a; }
+  .loc-btn.a-ten { background: #fef3c7; border-color: #f59e0b; color: #78350f; }
+  .loc-btn.a-none { background: #f0f0ee; color: #999; }
+  .ticket-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .ticket-row input { width: 16px; height: 16px; cursor: pointer; accent-color: #2563eb; }
+  .ticket-row label { font-size: 13px; color: #1a1a1a; cursor: pointer; }
+  .note-input { width: 100%; font-size: 12px; padding: 7px 9px; border-radius: 8px; border: 0.5px solid #ddd; background: #f8f8f6; color: #1a1a1a; resize: vertical; min-height: 54px; font-family: inherit; }
+  .prop-info { font-size: 10px; color: #aaa; margin-top: 8px; padding: 6px 9px; background: #f8f8f6; border-radius: 8px; }
+  .popup-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1.25rem; align-items: center; }
+  .btn-clear  { font-size: 12px; padding: 6px 12px; border-radius: 8px; border: 0.5px solid #ddd; cursor: pointer; background: transparent; color: #aaa; margin-right: auto; }
+  .btn-cancel { font-size: 12px; padding: 6px 14px; border-radius: 8px; border: 0.5px solid #ddd; cursor: pointer; background: transparent; color: #666; }
+  .btn-save   { font-size: 12px; padding: 6px 16px; border-radius: 8px; border: none; cursor: pointer; background: #1a1a1a; color: #fff; }
+  .btn-clear:hover  { background: #f5f5f5; }
+  .btn-cancel:hover { background: #f5f5f5; }
+  .btn-save:hover   { background: #333; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="sync-bar">
+    <div class="sync-dot loading" id="syncDot"></div>
+    <span id="syncMsg">Chargement…</span>
+  </div>
+
+  <div class="header">
+    <div class="title">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+      Calendrier CJA · LLA
+    </div>
+    <div class="legend">
+      <div class="leg-item"><span class="leg-tag leg-cja-bel">CJA Belgique</span></div>
+      <div class="leg-item"><span class="leg-tag leg-cja-ten">CJA Tenerife</span> <span class="leg-pct" id="pctCjaTen"></span></div>
+      <div class="leg-item"><span style="font-size:12px;font-weight:700;color:#b91c1c;">LLA</span>&nbsp;Belgique <span class="leg-pct" id="pctLlaBel"></span></div>
+      <div class="leg-item"><span style="font-size:12px;font-weight:400;color:#9ca3af;">LLA</span>&nbsp;Tenerife <span class="leg-pct" id="pctLlaTen"></span></div>
+      <div class="leg-item"><span class="leg-border"></span> Billet</div>
+      <div class="leg-item"><span class="leg-dot-wrap"><span class="leg-dot"></span></span> Événement</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="year-nav">
+      <button class="year-btn" id="prevY">‹</button>
+      <span class="year-label" id="yLabel">2026</span>
+      <button class="year-btn" id="nextY">›</button>
+    </div>
+    <button class="export-btn" id="exportBtn">
+      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export JSON
+    </button>
+  </div>
+
+  <div class="year-grid" id="yearGrid"></div>
+  <div id="popupZone"></div>
+</div>
+
+<script>
+const MFR=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const DFR=['L','M','M','J','V','S','D'];
+const START_YEAR=2026, START_MONTH=4, START_DAY=1;
+let year=2026, raw={}, resolved={}, editKey=null, tmpCja=null, tmpLla=null;
+let pollTimer=null;
+
+function syncStatus(state, msg){
+  document.getElementById('syncDot').className='sync-dot '+state;
+  document.getElementById('syncMsg').textContent=msg;
+}
+
+function dk(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+function todayKey(){ const n=new Date(); return dk(n.getFullYear(),n.getMonth(),n.getDate()); }
+function isBeforeStart(y,m,d){ return y<START_YEAR||(y===START_YEAR&&m<START_MONTH)||(y===START_YEAR&&m===START_MONTH&&d<START_DAY); }
+
+// ── Données initiales ──────────────────────────────────────────
+function getInitialData(){
+  const d={};
+  function s(k,cja,lla,note){ if(!d[k]) d[k]={}; if(cja) d[k].cja=cja; if(lla) d[k].lla=lla; if(note) d[k].note=note; }
+  function r(from,to,cja,lla,note){ const st=new Date(from),en=new Date(to); for(let dt=new Date(st);dt<=en;dt.setDate(dt.getDate()+1)){ const k=dt.toISOString().slice(0,10); if(!d[k]) d[k]={}; if(cja) d[k].cja=cja; if(lla) d[k].lla=lla; if(note) d[k].note=note; } }
+  s('2026-05-01','bel','ten',null);
+  r('2026-05-05','2026-05-07','bel','bel',null);
+  r('2026-05-08','2026-05-18','ten','bel',null);
+  s('2026-05-19','bel','bel',null);
+  r('2026-05-30','2026-06-07','ten','bel',null);
+  s('2026-06-08','bel','bel',null);
+  s('2026-06-09','bel','bel','Event Golf Damme');
+  s('2026-06-10','bel','bel','Event Golf Damme');
+  s('2026-06-12','bel','bel',null);
+  s('2026-06-13','bel','ten',null);
+  s('2026-06-23','bel',null,null);
+  r('2026-07-02','2026-07-25','ten',null,null);
+  s('2026-07-26','bel',null,null);
+  r('2026-07-25','2026-08-03',null,'bel','Jelo on Tour 2026');
+  s('2026-08-04',null,'ten',null);
+  r('2026-08-12','2026-08-17','bel',null,'Finale BPT Knokke');
+  r('2026-08-18','2026-09-13','ten',null,null);
+  s('2026-09-14','bel',null,null);
+  return d;
+}
+
+// ── API calls ──────────────────────────────────────────────────
+async function loadFromDB(){
+  try {
+    syncStatus('loading','Chargement…');
+    const res = await fetch('/api/get');
+    if(!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const wasEmpty = Object.keys(data.days).length === 0;
+    raw = data.days;
+    if(wasEmpty){
+      // Premier lancement : pousser données initiales
+      raw = getInitialData();
+      await pushInitialData();
+    }
+    syncStatus('ok', 'Synchronisé · '+new Date().toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'}));
+    render();
+  } catch(e){
+    syncStatus('err','Erreur de connexion');
+    console.error(e);
+  }
+}
+
+async function pushInitialData(){
+  const initial = getInitialData();
+  for(const [date, info] of Object.entries(initial)){
+    await fetch('/api/save', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ date, ...info })
+    });
+  }
+}
+
+async function saveDay(date, data){
+  try {
+    syncStatus('loading','Enregistrement…');
+    const res = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, ...data })
+    });
+    if(!res.ok) throw new Error(res.status);
+    syncStatus('ok','Enregistré · '+new Date().toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'}));
+  } catch(e){
+    syncStatus('err','Erreur sauvegarde');
+    console.error(e);
+  }
+}
+
+async function deleteDay(date){
+  try {
+    syncStatus('loading','Suppression…');
+    await fetch('/api/save', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ date, _delete: true })
+    });
+    syncStatus('ok','Enregistré · '+new Date().toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'}));
+  } catch(e){
+    syncStatus('err','Erreur suppression');
+  }
+}
+
+// Polling toutes les 15s pour synchro entre CJA et LLA
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async ()=>{
+    try {
+      const res = await fetch('/api/get');
+      if(!res.ok) return;
+      const data = await res.json();
+      raw = data.days;
+      render();
+      syncStatus('ok','Synchronisé · '+new Date().toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'}));
+    } catch(e){ /* silencieux */ }
+  }, 15000);
+}
+
+// ── Calendrier ─────────────────────────────────────────────────
+function allDaysOfYear(y){
+  const days=[];
+  for(let m=0;m<12;m++){
+    const dim=new Date(y,m+1,0).getDate();
+    for(let d=1;d<=dim;d++) days.push({key:dk(y,m,d),y,m,d});
+  }
+  return days;
+}
+
+function buildResolved(){
+  resolved={};
+  let lastCja=null, lastLla=null;
+  const allKeys=Object.keys(raw).sort();
+  const yp=`${year}-`;
+  for(const k of allKeys){ if(k>=yp) break; if(raw[k]&&raw[k].cja) lastCja=raw[k].cja; if(raw[k]&&raw[k].lla) lastLla=raw[k].lla; }
+  for(const {key} of allDaysOfYear(year)){
+    const r=raw[key]||{};
+    resolved[key]={
+      cja: r.cja||lastCja||null, lla: r.lla||lastLla||null,
+      cjaProp: !r.cja&&!!lastCja, llaProp: !r.lla&&!!lastLla,
+      ticket: r.ticket||false, note: r.note||''
+    };
+    if(r.cja) lastCja=r.cja;
+    if(r.lla) lastLla=r.lla;
+  }
+}
+
+function computeStats(){
+  let total=0, cjaTen=0, llaTen=0, llaBel=0;
+  for(const {key,y,m,d} of allDaysOfYear(year)){
+    if(isBeforeStart(y,m,d)) continue;
+    total++;
+    const i=resolved[key]||{};
+    if(i.cja==='ten') cjaTen++;
+    if(i.lla==='ten') llaTen++;
+    if(i.lla==='bel') llaBel++;
+  }
+  return {total,cjaTen,llaTen,llaBel};
+}
+
+function updateStats(){
+  const {total,cjaTen,llaTen,llaBel}=computeStats();
+  if(total>0){
+    document.getElementById('pctCjaTen').textContent=`(${Math.round(cjaTen/total*100)}% · ${cjaTen}j)`;
+    document.getElementById('pctLlaTen').textContent=`(${Math.round(llaTen/total*100)}% · ${llaTen}j)`;
+    document.getElementById('pctLlaBel').textContent=`(${Math.round(llaBel/total*100)}% · ${llaBel}j)`;
+  }
+}
+
+function render(){
+  buildResolved();
+  const grid=document.getElementById('yearGrid'); grid.innerHTML='';
+  const tk=todayKey();
+  for(let m=0;m<12;m++){
+    if(year===START_YEAR&&m<START_MONTH) continue;
+    const card=document.createElement('div'); card.className='month-card';
+    const mn=document.createElement('div'); mn.className='month-name'; mn.textContent=MFR[m]; card.appendChild(mn);
+    const dh=document.createElement('div'); dh.className='day-headers';
+    DFR.forEach(d=>{ const h=document.createElement('div'); h.className='dh'; h.textContent=d; dh.appendChild(h); });
+    card.appendChild(dh);
+    const dg=document.createElement('div'); dg.className='days-grid';
+    const fd=new Date(year,m,1).getDay(); const off=(fd===0)?6:fd-1;
+    const dim=new Date(year,m+1,0).getDate();
+    for(let i=0;i<off;i++){ const e=document.createElement('div'); e.className='day-cell empty'; dg.appendChild(e); }
+    for(let d=1;d<=dim;d++){
+      const key=dk(year,m,d); const info=resolved[key]||{};
+      const cell=document.createElement('div'); cell.className='day-cell'; cell.textContent=d;
+      if(isBeforeStart(year,m,d)){ cell.classList.add('disabled'); dg.appendChild(cell); continue; }
+      if(info.cja==='bel') cell.classList.add('cja-bel');
+      else if(info.cja==='ten') cell.classList.add('cja-ten');
+      if(info.lla==='bel') cell.classList.add('lla-bel');
+      else if(info.lla==='ten') cell.classList.add('lla-ten');
+      if(info.cjaProp&&info.llaProp) cell.style.opacity='0.55';
+      else if(info.cjaProp||info.llaProp) cell.style.opacity='0.7';
+      if(info.ticket) cell.classList.add('ticket');
+      if(info.note){ cell.classList.add('has-note'); cell.title=info.note; }
+      if(key===tk) cell.classList.add('today');
+      cell.addEventListener('click',()=>openPopup(key,d,m));
+      dg.appendChild(cell);
+    }
+    card.appendChild(dg); grid.appendChild(card);
+  }
+  document.getElementById('yLabel').textContent=year;
+  updateStats();
+}
+
+function openPopup(key,day,month){
+  editKey=key; const r=raw[key]||{}; const res=resolved[key]||{};
+  tmpCja=r.cja||null; tmpLla=r.lla||null;
+  const dStr=`${day} ${MFR[month]} ${year}`;
+  const propMsg=[];
+  if(!r.cja&&res.cja) propMsg.push(`CJA propagé (${res.cja==='bel'?'Belgique':'Tenerife'})`);
+  if(!r.lla&&res.lla) propMsg.push(`LLA propagé (${res.lla==='bel'?'Belgique':'Tenerife'})`);
+  document.getElementById('popupZone').innerHTML=`
+  <div class="popup-backdrop" id="bd">
+    <div class="popup">
+      <div class="popup-title">📅 ${dStr}</div>
+      <div class="popup-label">CJA — position explicite ce jour</div>
+      <div class="loc-btns">
+        <button class="loc-btn ${tmpCja==='bel'?'a-bel':''}" id="cb">🇧🇪 Belgique</button>
+        <button class="loc-btn ${tmpCja==='ten'?'a-ten':''}" id="ct">🌴 Tenerife</button>
+        <button class="loc-btn ${!tmpCja?'a-none':''}" id="cn">Aucune (propager)</button>
+      </div>
+      <div class="popup-label">LLA — position explicite ce jour</div>
+      <div class="loc-btns">
+        <button class="loc-btn ${tmpLla==='bel'?'a-bel':''}" id="lb">🇧🇪 Belgique</button>
+        <button class="loc-btn ${tmpLla==='ten'?'a-ten':''}" id="lt">🌴 Tenerife</button>
+        <button class="loc-btn ${!tmpLla?'a-none':''}" id="ln">Aucune (propager)</button>
+      </div>
+      <div class="ticket-row">
+        <input type="checkbox" id="tck" ${r.ticket?'checked':''}><label for="tck">Billet d'avion réservé</label>
+      </div>
+      <div class="popup-label">Événement / note</div>
+      <textarea class="note-input" id="ni" placeholder="Ex: anniversaire, golf...">${r.note||''}</textarea>
+      ${propMsg.length?`<div class="prop-info">ℹ️ ${propMsg.join(' · ')}</div>`:''}
+      <div class="popup-actions">
+        <button class="btn-clear" id="clr">Effacer ce jour</button>
+        <button class="btn-cancel" id="cnc">Annuler</button>
+        <button class="btn-save" id="sav">Enregistrer</button>
+      </div>
+    </div>
+  </div>`;
+
+  function updCja(v){ tmpCja=v; document.getElementById('cb').className='loc-btn'+(v==='bel'?' a-bel':''); document.getElementById('ct').className='loc-btn'+(v==='ten'?' a-ten':''); document.getElementById('cn').className='loc-btn'+(!v?' a-none':''); }
+  function updLla(v){ tmpLla=v; document.getElementById('lb').className='loc-btn'+(v==='bel'?' a-bel':''); document.getElementById('lt').className='loc-btn'+(v==='ten'?' a-ten':''); document.getElementById('ln').className='loc-btn'+(!v?' a-none':''); }
+  document.getElementById('cb').onclick=()=>updCja('bel');
+  document.getElementById('ct').onclick=()=>updCja('ten');
+  document.getElementById('cn').onclick=()=>updCja(null);
+  document.getElementById('lb').onclick=()=>updLla('bel');
+  document.getElementById('lt').onclick=()=>updLla('ten');
+  document.getElementById('ln').onclick=()=>updLla(null);
+  document.getElementById('bd').addEventListener('click',(e)=>{ if(e.target.id==='bd') closeP(); });
+  document.getElementById('cnc').onclick=closeP;
+
+  document.getElementById('clr').onclick=async ()=>{
+    delete raw[editKey];
+    await deleteDay(editKey);
+    render(); closeP();
+  };
+  document.getElementById('sav').onclick=async ()=>{
+    const note=document.getElementById('ni').value.trim();
+    const ticket=document.getElementById('tck').checked;
+    if(!tmpCja&&!tmpLla&&!note&&!ticket){
+      delete raw[editKey];
+      await deleteDay(editKey);
+    } else {
+      raw[editKey]={};
+      if(tmpCja) raw[editKey].cja=tmpCja;
+      if(tmpLla) raw[editKey].lla=tmpLla;
+      if(ticket)  raw[editKey].ticket=true;
+      if(note)    raw[editKey].note=note;
+      await saveDay(editKey, raw[editKey]);
+    }
+    render(); closeP();
+  };
+}
+function closeP(){ document.getElementById('popupZone').innerHTML=''; }
+
+document.getElementById('prevY').onclick=()=>{ year--; render(); };
+document.getElementById('nextY').onclick=()=>{ year++; render(); };
+document.getElementById('exportBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify(raw,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`cal_cja_lla_${year}.json`; a.click();
+  URL.revokeObjectURL(url);
+};
+
+loadFromDB();
+startPolling();
+</script>
+</body>
+</html>
